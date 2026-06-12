@@ -193,6 +193,39 @@ def put_setting(key: str, value: dict, db: Session = Depends(get_db),
     return {"ok": True}
 
 
+# ---- RingCentral setup: register webhook + backfill from the running app ----
+@router.post("/ringcentral/setup")
+def ringcentral_setup(webhook_url: str = "", backfill_days: int = 0,
+                      db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    from ..pipeline.ringcentral import RingCentralClient, queue_backfill
+    out: dict = {}
+    if webhook_url:
+        sub = RingCentralClient().setup_subscription(webhook_url)
+        out["subscription_id"] = sub.get("id")
+        out["expires"] = sub.get("expirationTime")
+    if backfill_days:
+        out["queued_calls"] = queue_backfill(db, backfill_days)
+    return out
+
+
+@router.get("/ringcentral/status")
+def ringcentral_status(admin: User = Depends(require_admin)):
+    """Check connectivity + list active webhook subscriptions."""
+    import httpx as _hx
+    from ..pipeline.ringcentral import RingCentralClient
+    rc = RingCentralClient()
+    try:
+        token = rc._auth()
+        r = _hx.get(f"{rc.base}/restapi/v1.0/subscription",
+                    headers={"Authorization": f"Bearer {token}"}, timeout=30)
+        subs = [{"id": s.get("id"), "address": (s.get("deliveryMode") or {}).get("address"),
+                 "status": s.get("status"), "expires": s.get("expirationTime")}
+                for s in r.json().get("records", [])]
+        return {"connected": True, "subscriptions": subs}
+    except Exception as e:
+        return {"connected": False, "error": str(e)[:300]}
+
+
 # ---- GDPR: erase a customer by phone number ----
 @router.delete("/gdpr/erase")
 def gdpr_erase(phone: str, db: Session = Depends(get_db), admin: User = Depends(require_admin)):

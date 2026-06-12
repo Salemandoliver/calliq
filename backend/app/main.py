@@ -1,7 +1,10 @@
 import logging
+import os
+import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from .config import settings
 from .db import Base, engine, SessionLocal
@@ -39,3 +42,21 @@ def startup():
             seed_demo_if_empty(db)
     finally:
         db.close()
+    # Single-service deployments (e.g. Railway): run the pipeline worker in-process
+    if os.environ.get("RUN_WORKER_IN_APP", "").lower() in ("1", "true", "yes"):
+        from .pipeline.worker import run_forever
+        threading.Thread(target=run_forever, daemon=True, name="calliq-worker").start()
+        logging.getLogger("calliq").info("In-process worker thread started")
+
+
+# ---- Static frontend (present when built into the image; see root Dockerfile) ----
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        candidate = os.path.normpath(os.path.join(_static_dir, full_path))
+        if (full_path and candidate.startswith(_static_dir)
+                and os.path.isfile(candidate)):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(_static_dir, "index.html"))

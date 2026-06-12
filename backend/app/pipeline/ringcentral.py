@@ -94,3 +94,40 @@ class RingCentralClient:
                 break
             page += 1
         return out
+
+
+def queue_backfill(db, days: int) -> int:
+    """Queue historical recorded calls for processing. Shared by the setup script
+    and the admin API endpoint."""
+    from datetime import datetime as _dt
+    from ..models import Call, User
+    rc = RingCentralClient()
+    added = 0
+    for r in rc.backfill_call_log(days):
+        if not r["rc_session_id"]:
+            continue
+        if db.query(Call).filter(Call.rc_session_id == r["rc_session_id"]).first():
+            continue
+        host = (db.query(User).filter(User.rc_extension_id == r["extension_id"]).first()
+                if r["extension_id"] else None)
+        direction = "outbound" if r["direction"].startswith("out") else "inbound"
+        started = _dt.utcnow()
+        if r["started_at"]:
+            try:
+                started = _dt.fromisoformat(
+                    r["started_at"].replace("Z", "+00:00")).replace(tzinfo=None)
+            except ValueError:
+                pass
+        db.add(Call(
+            host_id=host.id if host else None,
+            direction=direction,
+            activity_type=("Outbound - Acquisition" if direction == "outbound"
+                           else "Inbound - Call From Customer"),
+            from_number=r["from_number"], to_number=r["to_number"],
+            started_at=started, duration_sec=r["duration_sec"], status="queued",
+            rc_session_id=r["rc_session_id"], rc_recording_id=r["rc_recording_id"],
+        ))
+        added += 1
+    if added:
+        db.commit()
+    return added
