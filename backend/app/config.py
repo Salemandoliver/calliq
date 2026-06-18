@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Pilot/local mode: poll the call log every N minutes instead of relying on the
     # webhook (use when the app has no public URL). 0 = disabled.
     rc_poll_minutes: int = 0
+    # CallIQ Agent (Teams recordings)
+    recordings_api_key: str = ""
 
     # Compliance
     retention_days: int = 0  # 0 = keep forever; >0 = worker purges audio+transcripts older than N days
