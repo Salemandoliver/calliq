@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from .config import settings
 from .db import Base, engine, SessionLocal
 from .routers import (auth_router, calls_router, insights_router,
-                      admin_router, reports_router, webhooks_router)
+                      admin_router, reports_router, webhooks_router, teams_router)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 for r in (auth_router, calls_router, insights_router, admin_router,
-          reports_router, webhooks_router):
+          reports_router, webhooks_router,teams_router):
     app.include_router(r.router)
 
 
